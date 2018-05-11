@@ -7,13 +7,11 @@ from scipy import misc
 from os import listdir
 from os.path import isfile, join
 import data_loader
-import utils
 import argparse
 import numpy as np
 import pickle
 import h5py
 import time
-import pdb
 import progressbar as pb
 from PIL import Image
 
