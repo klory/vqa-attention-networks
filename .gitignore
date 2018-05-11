@@ -1,2 +1,9 @@
 test*.py
-.pyc
+test*.ipynb
+*.pyc
+*.pth
+.DS_Store
+data/
+__pycache__/
+.vscode/
+.ipynb_ckeckpoints/
