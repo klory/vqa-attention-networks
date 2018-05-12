@@ -231,12 +231,12 @@ def make_questions_vocab(token_type, questions, answers, answer_vocab):
 	return qw_vocab, max_question_length
 
 
-def load_fc7_features(data_dir, split):
+def load_image_features(data_dir, split):
 	import h5py
-	fc7_features = None
+	features = None
 	image_id_list = None
-	with h5py.File( join( data_dir, (split + '_fc7.h5')),'r') as hf:
-		fc7_features = np.array(hf.get('fc7_features'))
+	with h5py.File( join( data_dir, (split + '.h5')),'r') as hf:
+		features = np.array(hf.get('features'))
 	with h5py.File( join( data_dir, (split + '_image_id_list.h5')),'r') as hf:
 		image_id_list = np.array(hf.get('image_id_list'))
-	return fc7_features, image_id_list
+	return features, image_id_list
