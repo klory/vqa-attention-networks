@@ -1,4 +1,5 @@
 test*.py
+._*.py
 test*.ipynb
 *.pyc
 *.pth
