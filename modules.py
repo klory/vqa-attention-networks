@@ -8,7 +8,7 @@ class Attention_layer(nn.Module):
         super(Attention_layer, self).__init__()
         self.linear = Linear_layer()
 
-    def forward(self, img_features, qes_features):
+    def forward(self, img_features, qes_features, att_type=1):
         """
         inputs:
             img_featrues: N, L, D
@@ -21,6 +21,7 @@ class Attention_layer(nn.Module):
         img_features = torch.tensor(img_features, dtype=torch.float)
         qes_features = torch.tensor(qes_features, dtype=torch.float)
 
+        if att_type == 1:
 
         q_features = torch.unsqueeze(qes_features, 2) # N, T, 1, V,
         q_features = q_features.repeat(1, 1, L, 1) # N, T, L, V
@@ -46,3 +47,30 @@ class Linear_layer(nn.Module):
         nn.init.xavier_uniform_(weights)
         o = torch.squeeze(F.linear(inputs, weights))
         return o
+
+class Attention_1(nn.Module):
+    def __init__(self):
+        super(Attention_1, self).__init__()
+
+    def forward(self, feature_1, feature_2):
+        q_features = torch.unsqueeze(qes_features, 2) # N, T, 1, V,
+        q_features = q_features.repeat(1, 1, L, 1) # N, T, L, V
+
+        i_features = torch.unsqueeze(img_features, 0).view(-1, 1, L, D) # N, 1, L, D
+        i_features = i_features.repeat(1, T, 1, 1) # N, T, L, D
+
+        h_temp = i_features + q_features
+
+        # compute attention
+        att = self.linear(h_temp, D, 1) # N, T, L
+        att = F.softmax(att, dim=2)
+
+        I_hat = torch.matmul(att, img_features) # N, T, D
+
+class Nonlinear_layer(nn.Module):
+    def __init__(self):
+        pass
+
+    def forward(self):
+        pass
+
