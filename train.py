@@ -105,6 +105,12 @@ def sample_batch_soft(batch_no, batch_size, features, image_id_map, qa, split):
     count += 1
   return fc7, torch.tensor(sentence), torch.tensor(soft_answers), torch.tensor(answers)
 
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Linear') != -1:
+        nn.init.uniform_(m.weight.data)
+        nn.init.uniform_(m.bias.data)
+
 train_image_id_map = {image_id: i for i, image_id in enumerate(train_image_id_list)}
 val_image_id_map = {image_id: i for i, image_id in enumerate(val_image_id_list)}
 
@@ -126,6 +132,7 @@ else:
     criterion = nn.CrossEntropyLoss()
 
 optimizer = torch.optim.SGD(model.parameters(), lr=1e-4, momentum=0.9)
+optimizer = torch.optim.Adam(model.parameters())
 num_params = 0
 for param in model.parameters():
     num_params += param.numel()
@@ -162,7 +169,7 @@ for epoch in range(num_epoch):
         loss.backward()
         optimizer.step()
 
-        loss_value += loss.data[0]
+        loss_value += loss.item()
         pred = pred.data.max(1)[1] # get the index of the max log-probability
         correct += pred.eq(answers.data).cpu().sum()
         
@@ -202,11 +209,11 @@ for epoch in range(num_epoch):
         pred, que_att, img_att = model(img_features, que_features)
         loss = criterion(pred, soft_answers)
         
-        loss_value += loss.data[0]
+        loss_value += loss.item()
         pred = pred.data.max(1)[1] # get the index of the max log-probability
         acc = pred.eq(answers.data).cpu().sum()
         correct += acc
-        writer.add_scalar('att1_hard/train_loss_per_iter', loss.data[0], steps)
+        writer.add_scalar('att1_hard/train_loss_per_iter', loss.item(), steps)
         writer.add_scalar('att1_hard/train_acc_per_iter', acc, steps)
         steps += 1
 
