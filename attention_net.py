@@ -31,13 +31,14 @@ class Attention_net(nn.Module):
         img = F.dropout(F.relu(img))
         que = self.que_emb(que_features) # [N, 22] --> [N, 22, 512]
         que = F.dropout(que)
+        # pdb.set_trace()
         for i in range(self.att_num):
             if i%2 == 0:
                 img, que, que_att = self._modules['att{}'.format(i)](img, que) # que_att: [N, 49, 22]
             else:
                 que, img, img_att = self._modules['att{}'.format(i)](que, img) # img_att: [N, 22, 49]
         
-        x = torch.cat((que_att, img_att), 0)
+        x = torch.cat((que_att, img_att.transpose(1,2)), 0)
         x = x.view(batch_size, -1)
         # pdb.set_trace()
         x = self.fc(x) # [N, 2*22*49] -> [N, #answers]

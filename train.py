@@ -115,11 +115,11 @@ val_image_id_map = {image_id: i for i, image_id in enumerate(val_image_id_list)}
 model = Attention_net(block_num=train_image_features.size(1), word_num=qa_data['max_question_length'], 
                     img_size=train_image_features.size(2), vocab_size=len(qa_data['question_vocab']), 
                     embed_size=512, att_num=6, output_size=len(qa_data['answer_vocab']))
+
 def soft_loss(preds, labels):
-    s = torch.sum(torch.exp(labels), dim=1, keepdim=True)
-    s = s.expand(labels.shape[0], labels.shape[1])
-    s = labels / s
-    return torch.mean(torch.sum(-1.0*s*torch.log(preds) - (1-s)*torch.log(1-preds), dim=1))
+    s = F.softmax(labels, dim=1)
+    res = torch.mean(torch.sum(-1.0*s*torch.log(preds) - (1-s)*torch.log(1-preds), dim=1))
+    return res
 
 if use_soft:
     sample_batch = sample_batch_soft
@@ -160,7 +160,7 @@ for epoch in range(num_epoch):
         answers = answers.to(device)
         
         pred, que_att, img_att = model(img_features, que_features)
-        pdb.set_trace()
+        # pdb.set_trace()
         loss = criterion(pred, soft_answers.float())
         optimizer.zero_grad()
         loss.backward()

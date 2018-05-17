@@ -8,23 +8,26 @@ import sys
 class Attention_layer(nn.Module):
     def __init__(self, feature_size, att_type=1):
         super(Attention_layer, self).__init__()
+        self.nonlinear_1 = Nonlinear_layer(feature_size)
+        self.nonlinear_2 = Nonlinear_layer(feature_size)
         if att_type == 1:
             self.att_layer = Attention_1(feature_size)
         elif att_type == 2:
             self.att_layer = Attention_2(feature_size)
         else:
             sys.exit(0)
+
+        self.nonlinear_3 = Nonlinear_layer(feature_size)
             
-        self.nonlinear_1 = Nonlinear_layer(feature_size)
-        self.nonlinear_2 = Nonlinear_layer(feature_size)
 
     def forward(self, feature_1, feature_2):
         feature_1_embbed = self.nonlinear_1(feature_1)
         feature_2_embbed = self.nonlinear_2(feature_2)
 
-        f_hat, att = self.att_layer(feature_1, feature_2)
+        f_hat, att = self.att_layer(feature_1_embbed, feature_2_embbed)
+        feature_2_embbed = self.nonlinear_3(feature_2_embbed + f_hat)
 
-        return (feature_2_embbed + f_hat, feature_1_embbed, att)
+        return (feature_1_embbed, feature_2_embbed, att)
 
 class Attention_1(nn.Module):
     def __init__(self, feature_size):
