@@ -33,6 +33,7 @@ class Attention_1(nn.Module):
     def __init__(self, feature_size):
         super(Attention_1, self).__init__()
         self.fc = nn.Linear(feature_size, 1)
+        self.tanh = nn.Tanh()
 
     def forward(self, feature_1, feature_2):
         """
@@ -53,7 +54,8 @@ class Attention_1(nn.Module):
         h_temp = feature1 + feature2
 
         # compute attention
-        att = torch.squeeze(self.fc(h_temp)) # N, T, L
+        att = self.tanh(self.fc(h_temp))
+        att = torch.squeeze(att) # N, T, L
         if len(att.shape) == 2:
             att = torch.unsqueeze(att, 0)
         att = F.softmax(att, dim=2) # weights for feature_1
