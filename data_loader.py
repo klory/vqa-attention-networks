@@ -37,11 +37,11 @@ def prepare_training_data(token_type='word', version = 2, data_dir = 'data'):
                 v_q_json_file = join(data_dir, 'vqa/v2_OpenEnded_mscoco_val2014_questions.json')
                 v_a_json_file = join(data_dir, 'vqa/v2_mscoco_val2014_annotations.json')
                 if token_type == 'word':
-                        qa_data_file = join(data_dir, 'vqa/qa_data_file2.pkl')
-                        vocab_file = join(data_dir, 'vqa/vocab_file2.pkl')
+                        qa_data_file = join(data_dir, 'qa_data_file2_5000.pkl')
+                        vocab_file = join(data_dir, 'vocab_file2_5000.pkl')
                 elif token_type == 'bigram':
-                        qa_data_file = join(data_dir, 'vqa/bi_qa_data_file2.pkl')
-                        vocab_file = join(data_dir, 'vqa/bi_vocab_file2.pkl')
+                        qa_data_file = join(data_dir, 'bi_qa_data_file2_5000.pkl')
+                        vocab_file = join(data_dir, 'bi_vocab_file2_5000.pkl')
 
         # IF ALREADY EXTRACTED
         # qa_data_file = join(data_dir, 'qa_data_file{}.pkl'.format(version))
@@ -70,8 +70,8 @@ def prepare_training_data(token_type='word', version = 2, data_dir = 'data'):
         print("Ans", len(t_answers['annotations']), len(v_answers['annotations']))
         print("Qu", len(t_questions['questions']), len(v_questions['questions']))
 
-        answers = t_answers['annotations'] + v_answers['annotations']
-        questions = t_questions['questions'] + v_questions['questions']
+        answers = t_answers['annotations'][:2500] + v_answers['annotations'][:2500]
+        questions = t_questions['questions'][:2500] + v_questions['questions'][:2500]
         
         # find the top 3000 answers and their frequencies
         answer_vocab = make_answer_vocab(answers) 
@@ -84,7 +84,7 @@ def prepare_training_data(token_type='word', version = 2, data_dir = 'data'):
         # only need words
         word_regex = re.compile(r'\w+')
         training_data = []
-        for i,question in enumerate( t_questions['questions']):
+        for i,question in enumerate( t_questions['questions'][:2500]):
                 ans = t_answers['annotations'][i]['multiple_choice_answer']
                 # only need questions that has the top 3000 answers
                 if ans in answer_vocab:
@@ -103,7 +103,7 @@ def prepare_training_data(token_type='word', version = 2, data_dir = 'data'):
 
         print("Training Data", len(training_data))
         val_data = []
-        for i,question in enumerate( v_questions['questions']):
+        for i,question in enumerate( v_questions['questions'][:2500]):
                 ans = v_answers['annotations'][i]['multiple_choice_answer']
                 if ans in answer_vocab:
                         val_data.append({
@@ -155,6 +155,17 @@ def load_questions_answers(token_type='word', version = 2, data_dir = 'data'):
                         data = pickle.load(f)
                         return data
 
+def load_questions_answers_5000(token_type='word', version = 2, data_dir = 'data'):
+        if token_type == 'word':
+                qa_data_file = join(data_dir, 'qa_data_file{}_5000.pkl'.format(version))
+        elif token_type == 'bigram':
+                qa_data_file = join(data_dir, 'bi_qa_data_file{}_5000.pkl'.format(version))
+
+        if isfile(qa_data_file):
+                with open(qa_data_file, 'rb') as f:
+                        data = pickle.load(f)
+                        return data
+
 def get_question_answer_vocab(token_type='word', version = 2, data_dir = 'data'):
         if token_type == 'word':
                 vocab_file = join(data_dir, 'vocab_file{}.pkl'.format(version))
@@ -165,7 +176,7 @@ def get_question_answer_vocab(token_type='word', version = 2, data_dir = 'data')
         return vocab_data
 
 def make_answer_vocab(answers):
-        top_n = 3000
+        top_n = 1000
         answer_frequency = {} 
         for annotation in answers:
                 answer = annotation['multiple_choice_answer']
@@ -253,11 +264,21 @@ def make_questions_vocab(token_type, questions, answers, answer_vocab):
 
 
 def load_image_features(data_dir, split):
-	import h5py
-	features = None
-	image_id_list = None
-	with h5py.File( join( data_dir, (split + '.h5')),'r') as hf:
-		features = np.array(hf.get('features'))
-	with h5py.File( join( data_dir, (split + '_image_id_list.h5')),'r') as hf:
-		image_id_list = np.array(hf.get('image_id_list'))
-	return features, image_id_list
+    import h5py
+    features = None
+    image_id_list = None
+    with h5py.File( join( data_dir, (split + '.h5')),'r') as hf:
+        features = np.array(hf.get('features'))
+    with h5py.File( join( data_dir, (split + '_image_id_list.h5')),'r') as hf:
+        image_id_list = np.array(hf.get('image_id_list'))
+    return features, image_id_list
+
+def load_image_features_5000(data_dir, split):
+    import h5py
+    features = None
+    image_id_list = None
+    with h5py.File( join( data_dir, (split + '_5000.h5')),'r') as hf:
+        features = np.array(hf.get('features'))
+    with h5py.File( join( data_dir, (split + '_image_id_list_5000.h5')),'r') as hf:
+        image_id_list = np.array(hf.get('image_id_list'))
+    return features, image_id_list

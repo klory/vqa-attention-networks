@@ -3,8 +3,10 @@ test*.py
 test*.ipynb
 *.pyc
 *.pth
-.DS_Store
+.*DS_Store
 data/
 __pycache__/
 .vscode/
 .ipynb_ckeckpoints/
+runs/
+.vscode/

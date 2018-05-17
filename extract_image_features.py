@@ -4,6 +4,7 @@ from torchvision import models
 from torchvision import transforms
 
 from scipy import misc
+import os
 from os import listdir
 from os.path import isfile, join
 import data_loader
@@ -36,23 +37,36 @@ class FeatureExtractor(nn.Module):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--use_small', action='store_true', default=False,
+                        help='use small dataset only with 5000 questions and 1000 answers')
     parser.add_argument('--split', type=str, default='train',
                        help='train/val')
     parser.add_argument('--data_dir', type=str, default='data',
+                       help='Data directory')
+    parser.add_argument('--output_dir', type=str, default='data',
                        help='Data directory')
     parser.add_argument('--batch_size', type=int, default=32,
                        help='Batch Size')
     
     args = parser.parse_args()
-    all_data = data_loader.load_questions_answers('word')
+    
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
+    
+    use_small = args.use_small
+    if use_small:
+        all_data = data_loader.load_questions_answers_5000('word')
+    else:
+        all_data = data_loader.load_questions_answers('word')
+
     if args.split == "train":
         qa_data = all_data['training']
     else:
         qa_data = all_data['validation']
     
     print("Total Questions", len(qa_data))
-    image_ids = {}
     
+    image_ids = {}
     for qa in qa_data:
         image_ids[qa['image_id']] = 1
     
@@ -60,8 +74,8 @@ def main():
     print("Total Images", len(image_id_list))
     
     mymodel = models.vgg19(pretrained=True)
-    extract_list = [27, 36]
-    myexactor = FeatureExtractor(mymodel.features,extract_list)
+    extract_layer_ids = [27, 36]
+    myexactor = FeatureExtractor(mymodel.features,extract_layer_ids)
     myexactor.eval()
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -93,8 +107,7 @@ def main():
             image_batch[i,:,:,:] = preprocess(img)
             idx += 1
             count += 1
-        
-        # pdb.set_trace()
+
         image_batch.to(device)
         fc7_batch = myexactor(image_batch)
         fc7[(idx - count):idx, :,:,:] = fc7_batch[0:count,:,:,:].data.cpu().numpy()
@@ -104,12 +117,14 @@ def main():
         print("Images Processed", idx)
         
     print("Saving features")
-    h5f_fc7 = h5py.File( join(args.data_dir, args.split + '.h5'), 'w')
+    features_filename = join(args.output_dir, args.split + '_5000.h5') if use_small else join(args.output_dir, args.split + '.h5')
+    h5f_fc7 = h5py.File(features_filename, 'w')
     h5f_fc7.create_dataset('features', data=fc7)
     h5f_fc7.close()
 
     print("Saving image id list")
-    h5f_image_id_list = h5py.File( join(args.data_dir, args.split + '_image_id_list.h5'), 'w')
+    features_filename = join(args.output_dir, args.split + '_image_id_list_5000.h5') if use_small else join(args.output_dir, args.split + '_image_id_list.h5')
+    h5f_image_id_list = h5py.File(features_filename, 'w')
     h5f_image_id_list.create_dataset('image_id_list', data=image_id_list)
     h5f_image_id_list.close()
     print("Done!")

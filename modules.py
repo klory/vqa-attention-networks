@@ -24,7 +24,7 @@ class Attention_layer(nn.Module):
 
         f_hat, att = self.att_layer(feature_1, feature_2)
 
-        return (feature_1_embbed + f_hat, feature_2_embbed, att)
+        return (feature_2_embbed + f_hat, feature_1_embbed, att)
 
 class Attention_1(nn.Module):
     def __init__(self, feature_size):
@@ -34,24 +34,26 @@ class Attention_1(nn.Module):
     def forward(self, feature_1, feature_2):
         """
         inputs:
-            feature_1: N, T, V
-            featrue_2: N, L, D
+            feature_1: N, L, D
+            featrue_2: N, T, V
         """
         L, D = feature_1.shape[1], feature_1.shape[2]
         T, V = feature_2.shape[1], feature_2.shape[2]
         assert (D == V), "dimension of feature_1 and feature_2 not match"
 
         feature2 = torch.unsqueeze(feature_2, 2) # N, T, 1, V,
-        feature2 = feature2.repeat(1, 1, L, 1) # N, T, L, V
+        feature2 = feature2.repeat((1, 1, L, 1)) # N, T, L, V
 
         feature1 = torch.unsqueeze(feature_1, 0).permute(1, 0, 2, 3) # N, 1, L, D
-        feature1 = feature1.repeat(1, T, 1, 1) # N, T, L, D
+        feature1 = feature1.repeat((1, T, 1, 1)) # N, T, L, D
 
         h_temp = feature1 + feature2
 
         # compute attention
         att = torch.squeeze(self.fc(h_temp)) # N, T, L
-        att = F.softmax(att, dim=2)
+        if len(att.shape) == 2:
+            att = torch.unsqueeze(att, 0)
+        att = F.softmax(att, dim=2) # weights for feature_1
 
         f_hat = torch.matmul(att, feature_1) # N, T, D
         return f_hat, att

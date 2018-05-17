@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from modules import Attention_layer
+import pdb
 
 class Attention_net(nn.Module):
     def __init__(self, block_num=49, word_num=22, img_size=1024, vocab_size=15881, embed_size=512, att_num=6, output_size=3000):
@@ -28,7 +29,7 @@ class Attention_net(nn.Module):
         batch_size = img_features.size(0)
         img = self.img_emb(img_features) # [N, 49, 1024] --> [N, 49, 512]
         img = F.dropout(F.relu(img))
-        que = self.que_emb(que_features) # [N, 22, 15881] --> [N, 22, 512]
+        que = self.que_emb(que_features) # [N, 22] --> [N, 22, 512]
         que = F.dropout(que)
         for i in range(self.att_num):
             if i%2 == 0:
@@ -38,5 +39,6 @@ class Attention_net(nn.Module):
         
         x = torch.cat((que_att, img_att), 0)
         x = x.view(batch_size, -1)
-        x = self.fc(x)
-        return F.log_softmax(x), que_att, img_att
+        # pdb.set_trace()
+        x = self.fc(x) # [N, 2*22*49] -> [N, #answers]
+        return F.softmax(x, dim=1), que_att, img_att
