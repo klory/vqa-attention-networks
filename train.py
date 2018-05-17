@@ -62,8 +62,8 @@ train_image_features = train_image_features.view(train_image_features.size(0), -
 val_image_features = torch.tensor(val_image_features)
 val_image_features = val_image_features.permute(0, 2, 3, 1)
 val_image_features = val_image_features.view(val_image_features.size(0), -1, val_image_features.size(3))
-#sys.exit(0)
-# Define Data Loader 
+
+# Define Data Loader
 def sample_batch_hard(batch_no, batch_size, features, image_id_map, qa, split):
   si = (batch_no * batch_size)%len(qa)
   ei = min(len(qa), si + batch_size)
@@ -75,12 +75,10 @@ def sample_batch_hard(batch_no, batch_size, features, image_id_map, qa, split):
   count = 0
   for i in range(si, ei):
     sentence[count,:] = qa[i]['question'][:]
-#     answers[count, qa[i]['answer']] = 1
     answers[count] = qa[i]['answer']
     fc7_index = image_id_map[ qa[i]['image_id'] ]
     fc7[count,:,:] = features[fc7_index, :, :]
     count += 1
-  
   return fc7, torch.tensor(sentence), torch.tensor(answers), torch.tensor(answers)
 
 
@@ -105,7 +103,6 @@ def sample_batch_soft(batch_no, batch_size, features, image_id_map, qa, split):
     fc7_index = image_id_map[ qa[i]['image_id'] ]
     fc7[count,:,:] = features[fc7_index, :, :]
     count += 1
-  
   return fc7, torch.tensor(sentence), torch.tensor(soft_answers), torch.tensor(answers)
 
 train_image_id_map = {image_id: i for i, image_id in enumerate(train_image_id_list)}
@@ -160,8 +157,7 @@ for epoch in range(num_epoch):
         answers = answers.to(device)
         
         pred, que_att, img_att = model(img_features, que_features)
-        # pdb.set_trace()
-        loss = criterion(pred, soft_answers.float())
+        loss = criterion(pred, soft_answers)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -178,7 +174,7 @@ for epoch in range(num_epoch):
 #         for param_group in early_optimizer.param_groups:
 #             param_group['lr'] *= 0.5
     train_epoch_loss = loss_value / (len(train_qa_data) // batch_size)
-    train_epoch_acc = correct.double() / (len(train_qa_data) // batch_size * batch_size)
+    train_epoch_acc = correct.float() / (len(train_qa_data) // batch_size * batch_size)
     
     model.eval()
 
@@ -204,7 +200,7 @@ for epoch in range(num_epoch):
         answers = answers.to(device)
         
         pred, que_att, img_att = model(img_features, que_features)
-        loss = criterion(pred, soft_answers.float())
+        loss = criterion(pred, soft_answers)
         
         loss_value += loss.data[0]
         pred = pred.data.max(1)[1] # get the index of the max log-probability
@@ -218,7 +214,7 @@ for epoch in range(num_epoch):
                     loss_value / (len(val_qa_data) /batch_size),
                     correct.double() / (len(val_qa_data) // batch_size * batch_size)))
     val_epoch_loss = loss_value / (len(train_qa_data) // batch_size)
-    val_epoch_acc = correct.double() / (len(val_qa_data) // batch_size * batch_size)
+    val_epoch_acc = correct.float() / (len(val_qa_data) // batch_size * batch_size)
     
     if val_epoch_loss < prev_val_epoch_loss:
         prev_val_epoch_loss = val_epoch_loss
@@ -228,8 +224,8 @@ for epoch in range(num_epoch):
         count += 1
         if count >= 3:
             break
-    writer.add_scalars('att1_hard/loss', {'train_loss': train_epoch_loss, 'val_loss': val_epoch_loss}, epoch)
-    writer.add_scalars('att1_hard/accuracy', {'train_loss': train_epoch_acc, 'val_loss': val_epoch_acc}, epoch)
+    writer.add_scalars('att1_hard/loss', {'train_loss_per_epoch': train_epoch_loss, 'val_loss_per_epoch': val_epoch_loss}, epoch)
+    writer.add_scalars('att1_hard/accuracy', {'train_loss_per_epoch': train_epoch_acc, 'val_loss_per_epoch': val_epoch_acc}, epoch)
     
 # load best model weights
 model.load_state_dict(best_model_wts)
