@@ -2,11 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
-from data_loader import load_questions_answers, load_image_features, load_image_features_5000, load_questions_answers_5000
+from data_loader import load_questions_answers, load_image_features, load_image_features_small, load_questions_answers_small
 from tensorboardX import SummaryWriter
 import progressbar as pb
 import numpy as np
-from attention_net import Attention_net
+from attention_net import Attention_net, Attention_net_parallel
 import copy
 import argparse
 import sys
@@ -17,8 +17,8 @@ parser.add_argument('--data_dir', type=str, default='data',
                     help='data directory (default: data)')
 parser.add_argument('--batch_size', type=int, default=64,
                     help='input batch size for training (default: 64)')
-parser.add_argument('--num_epoch', type=int, default=25,
-                    help='num of training epochs (default: 50)')
+parser.add_argument('--num_epoch', type=int, default=60,
+                    help='num of training epochs (default: 60)')
 parser.add_argument('--use_soft', action='store_true', default=False,
                     help='using soft cross entropy')
 args = parser.parse_args()
@@ -30,7 +30,7 @@ use_soft = args.use_soft
 
 # Load QA Data
 print("Reading QA DATA")
-qa_data = load_questions_answers_5000(token_type='word', version=2, data_dir=data_dir)
+qa_data = load_questions_answers(token_type='word', version=2, data_dir=data_dir)
 print("train questions", len(qa_data['training']))
 print("val questions", len(qa_data['validation']))
 print("answer vocab", len(qa_data['answer_vocab']))
@@ -38,19 +38,20 @@ print("question vocab", len(qa_data['question_vocab']))
 print("max question length", qa_data['max_question_length'])
 
 # for debuging
-#writer = SummaryWriter()
-#model = Attention_net(output_size=len(qa_data['answer_vocab']))
-#dummy_img = torch.rand([2, 49, 1024], dtype=torch.float)
-#dummy_qes = torch.randint(100, size=(2, 22), dtype=torch.long)
-##
-#writer.add_graph(model, (dummy_img, dummy_qes))
-#print('graph added')
+writer = SummaryWriter()
+model = Attention_net(output_size=len(qa_data['answer_vocab']))
+dummy_img = torch.rand([2, 49, 1024], dtype=torch.float)
+dummy_qes = torch.randint(100, size=(2, 22), dtype=torch.long)
+dummy_ans = torch.randint(10, size=[2], dtype=torch.long)
+#
+writer.add_graph(model, (dummy_img, dummy_qes, ))
+print('graph added')
 #sys.exit(0)
 
-train_image_features, train_image_id_list = load_image_features_5000(data_dir, 'train')
+train_image_features, train_image_id_list = load_image_features(data_dir, 'train')
 print("train image features", train_image_features.shape)
 print("train image_id_list", train_image_id_list.shape)
-val_image_features, val_image_id_list = load_image_features_5000(data_dir, 'val')
+val_image_features, val_image_id_list = load_image_features(data_dir, 'val')
 print("val image features", val_image_features.shape)
 print("val image_id_list", val_image_id_list.shape)
 
@@ -105,14 +106,22 @@ def sample_batch_soft(batch_no, batch_size, features, image_id_map, qa, split):
     count += 1
   return fc7, torch.tensor(sentence), torch.tensor(soft_answers), torch.tensor(answers)
 
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Linear') != -1:
+        nn.init.uniform_(m.weight.data)
+        nn.init.uniform_(m.bias.data)
 train_image_id_map = {image_id: i for i, image_id in enumerate(train_image_id_list)}
 val_image_id_map = {image_id: i for i, image_id in enumerate(val_image_id_list)}
 
 # Train 
-model = Attention_net(block_num=train_image_features.size(1), word_num=qa_data['max_question_length'], 
+"""
+model = Attention_net_parallel(block_num=train_image_features.size(1), word_num=qa_data['max_question_length'], 
                     img_size=train_image_features.size(2), vocab_size=len(qa_data['question_vocab']), 
                     embed_size=512, att_num=6, output_size=len(qa_data['answer_vocab']))
+"""
 
+model = Attention_net(block_num=train_image_features.size(1), word_num=qa_data['max_question_length'], img_size=train_image_features.size(2), vocab_size=len(qa_data['question_vocab']), embed_size=512, att_num=6, output_size=len(qa_data['answer_vocab']))
 def soft_loss(preds, labels):
     s = F.softmax(labels, dim=1)
     res = torch.mean(torch.sum(-1.0*s*torch.log(preds) - (1-s)*torch.log(1-preds), dim=1))
@@ -125,7 +134,8 @@ else:
     sample_batch = sample_batch_hard
     criterion = nn.CrossEntropyLoss()
 
-optimizer = torch.optim.SGD(model.parameters(), lr=1e-4, momentum=0.9)
+#optimizer = torch.optim.SGD(model.parameters(), lr=1e-4, momentum=0.9)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 num_params = 0
 for param in model.parameters():
     num_params += param.numel()
@@ -134,12 +144,13 @@ print("Num parameters {}".format(num_params))
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # if torch.cuda.device_count() > 1:
 #     print("Use", torch.cuda.device_count(), "GPUs!")
-#     model = nn.DataParallel(model)
+#     model = nn.DataParallel(model, device_ids=[0,1,2,3])
 model = model.to(device)
 
 writer = SummaryWriter()
-steps = 0
 best_model_wts = copy.deepcopy(model.state_dict())
+
+num_iter_per_epoch = len(train_qa_data) // batch_size
 for epoch in range(num_epoch):
     pbar = pb.ProgressBar()
     model.train()
@@ -148,7 +159,7 @@ for epoch in range(num_epoch):
 
     # Train
     train_qa_data = qa_data['training']
-    for j in pbar(range(len(train_qa_data) // batch_size)):
+    for j in pbar(range(1, num_iter_per_epoch+1)):
         img_features, que_features, soft_answers, answers = sample_batch(j, batch_size, train_image_features, train_image_id_map, train_qa_data, 'train')
         
         img_features = img_features.to(device)
@@ -156,19 +167,23 @@ for epoch in range(num_epoch):
         soft_answers = soft_answers.to(device)
         answers = answers.to(device)
         
-        pred, que_att, img_att = model(img_features, que_features)
-        loss = criterion(pred, soft_answers)
+        logits, que_att, img_att = model(img_features, que_features)
+        pred = F.softmax(logits, dim=1)
+        pred = pred.data.max(1)[1] # get the index of the max log-probability
+        loss = criterion(logits, soft_answers)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        loss_value += loss.data[0]
-        pred = pred.data.max(1)[1] # get the index of the max log-probability
-        correct += pred.eq(answers.data).cpu().sum()
+        loss_value += loss.data
+        correct += pred.eq(soft_answers.data).cpu().sum()
+        if j % 100 == 0
+            writer.add_scalar('att1_hard_total/train_loss_per_iter', loss.data, e*num_iter_per_epoch + j)
+            writer.add_scalar('att1_hard_total/train_acc_per_iter', acc, e*num_iter_per_epoch + j)
         
     print("\nTrain epoch {}, loss {}, acc {}".format(epoch,
-            loss_value / (len(train_qa_data) // batch_size),
-            correct.double() / (len(train_qa_data) // batch_size * batch_size)))
+            loss_value / num_iter_per_epoch,
+            correct.double() / len(train_qa_data)))
 
 #     if epoch > 20 and epoch % 10 == 0:
 #         for param_group in early_optimizer.param_groups:
@@ -202,13 +217,10 @@ for epoch in range(num_epoch):
         pred, que_att, img_att = model(img_features, que_features)
         loss = criterion(pred, soft_answers)
         
-        loss_value += loss.data[0]
+        loss_value += loss.data
         pred = pred.data.max(1)[1] # get the index of the max log-probability
         acc = pred.eq(answers.data).cpu().sum()
         correct += acc
-        writer.add_scalar('att1_hard/train_loss_per_iter', loss.data[0], steps)
-        writer.add_scalar('att1_hard/train_acc_per_iter', acc, steps)
-        steps += 1
 
     print("\nTest epoch {}, loss {}, acc {}".format(epoch,
                     loss_value / (len(val_qa_data) /batch_size),
@@ -224,8 +236,8 @@ for epoch in range(num_epoch):
         count += 1
         if count >= 3:
             break
-    writer.add_scalars('att1_hard/loss', {'train_loss_per_epoch': train_epoch_loss, 'val_loss_per_epoch': val_epoch_loss}, epoch)
-    writer.add_scalars('att1_hard/accuracy', {'train_loss_per_epoch': train_epoch_acc, 'val_loss_per_epoch': val_epoch_acc}, epoch)
+    writer.add_scalars('att1_hard_total/loss', {'train_loss_per_epoch': train_epoch_loss, 'val_loss_per_epoch': val_epoch_loss}, epoch)
+    writer.add_scalars('att1_hard_total/accuracy', {'train_loss_per_epoch': train_epoch_acc, 'val_loss_per_epoch': val_epoch_acc}, epoch)
     
 # load best model weights
 model.load_state_dict(best_model_wts)

@@ -38,7 +38,7 @@ class FeatureExtractor(nn.Module):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--use_small', action='store_true', default=False,
-                        help='use small dataset only with 5000 questions and 1000 answers')
+                        help='use small dataset')
     parser.add_argument('--split', type=str, default='train',
                        help='train/val')
     parser.add_argument('--data_dir', type=str, default='data',
@@ -54,8 +54,9 @@ def main():
         os.makedirs(args.output_dir)
     
     use_small = args.use_small
+    num_que = 20000
     if use_small:
-        all_data = data_loader.load_questions_answers_5000('word')
+        all_data = data_loader.load_questions_answers_small('word', num_que=num_que)
     else:
         all_data = data_loader.load_questions_answers('word')
 
@@ -117,13 +118,16 @@ def main():
         print("Images Processed", idx)
         
     print("Saving features")
-    features_filename = join(args.output_dir, args.split + '_5000.h5') if use_small else join(args.output_dir, args.split + '.h5')
+    features_filename = join(args.output_dir, args.split+'_'+str(num_que)+'.h5') if use_small \
+                        else join(args.output_dir, args.split + '.h5')
     h5f_fc7 = h5py.File(features_filename, 'w')
     h5f_fc7.create_dataset('features', data=fc7)
     h5f_fc7.close()
 
     print("Saving image id list")
-    features_filename = join(args.output_dir, args.split + '_image_id_list_5000.h5') if use_small else join(args.output_dir, args.split + '_image_id_list.h5')
+    features_filename = join(args.output_dir, args.split+'_image_id_list_'+str(num_que)+'.h5') if use_small \
+                        else join(args.output_dir, args.split + '_image_id_list.h5')
+
     h5f_image_id_list = h5py.File(features_filename, 'w')
     h5f_image_id_list.create_dataset('image_id_list', data=image_id_list)
     h5f_image_id_list.close()
