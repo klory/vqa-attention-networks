@@ -7,6 +7,6 @@ test*.ipynb
 data/
 __pycache__/
 .vscode/
-.ipynb_ckeckpoints/
+.ipynb_checkpoints/
 runs/
 .vscode/
