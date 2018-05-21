@@ -3,14 +3,12 @@ import torch.nn as nn
 from torchvision import models
 from torchvision import transforms
 
-from scipy import misc
 import os
 from os import listdir
 from os.path import isfile, join
 import data_loader
 import argparse
 import numpy as np
-import pickle
 import h5py
 import time
 import progressbar as pb

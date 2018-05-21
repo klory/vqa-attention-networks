@@ -282,3 +282,13 @@ def load_image_features_small(data_dir, split, num_que=20000):
     with h5py.File( join( data_dir, (split + '_image_id_list_'+str(num_que)+'.h5')),'r') as hf:
         image_id_list = np.array(hf.get('image_id_list'))
     return features, image_id_list
+
+def load_image_features_4096(data_dir, split):
+    import h5py
+    features = None
+    image_id_list = None
+    with h5py.File( join( data_dir, (split + '_4096.h5')),'r') as hf:
+        features = np.array(hf.get('features'))
+    with h5py.File( join( data_dir, (split + '_image_id_list_4096.h5')),'r') as hf:
+        image_id_list = np.array(hf.get('image_id_list'))
+    return features, image_id_list
