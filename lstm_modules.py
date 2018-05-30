@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch import optim
+import torch.nn.functional as F
 
 import pdb
 class VisLSTM(nn.Module):
@@ -15,12 +16,13 @@ class VisLSTM(nn.Module):
         # network graph
         self.embedding_ques = nn.Embedding(self.vocab_size, self.embed_dim)
         self.embedding_img = nn.Linear(self.img_dim, self.hidden_dim)
-        self.lstm = nn.LSTMCell(self.embed_dim, self.hidden_dim)
+        self.lstm1 = nn.LSTMCell(self.embed_dim, self.hidden_dim)
+        self.lstm2 = nn.LSTMCell(self.hidden_dim, self.hidden_dim)
         self.output_layer = nn.Linear(self.hidden_dim, self.vocab_size)
 
     def init_hidden(self, batch_size):
-        return (torch.zeros(batch_size, self.hidden_dim),\
-                torch.zeros(batch_size, self.hidden_dim))
+        return (torch.zeros(batch_size, self.hidden_dim).cuda(),\
+                torch.zeros(batch_size, self.hidden_dim).cuda())
 
     def forward(self, questions, img_features, first_words=True):
         """
@@ -30,15 +32,14 @@ class VisLSTM(nn.Module):
             first_words: whether img_features fed into lstm as the first words or not
         """
         embedded_ques = self.embedding_ques(questions) # N, T, V
-        embedded_img = self.embedding_img(img_features) # N, H
+        embedded_img = F.dropout(F.tanh(self.embedding_img(img_features)))# N, H
         embedded_ques = embedded_ques.permute((1, 0, 2))
 
         N, D = embedded_img.shape
         T, N, V = embedded_ques.shape
         assert(D == V), 'question embedding dimension and image feature dimension not match'
 
-        inputs = torch.zeros((T+1, N, V ))
-        #pdb.set_trace()
+        inputs = torch.zeros((T+1, N, V )).cuda()
         if first_words:
             inputs[0] = embedded_img
             inputs[1:, :, :] = embedded_ques
@@ -46,14 +47,16 @@ class VisLSTM(nn.Module):
             inputs[:T, :, :] = embedded_ques
             inputs[T] = embedded_img
 
-        h = self.init_hidden(N)
+        h1 = self.init_hidden(N)
+        h2 = self.init_hidden(N)
         hidden_states = list()
         for t in range(T+1):
-            h = self.lstm(inputs[t], h)
-            hidden_states.append(h[0])
+            h1 = self.lstm1(inputs[t], h1)
+            h2 = self.lstm2(h1[0], h2)
+            hidden_states.append(h2[0])
 
+        output = self.output_layer(hidden_states[-1])
         hidden_states = torch.stack(hidden_states, 1)
-        output = self.output_layer(hidden_states[:, T, :])
         return output, hidden_states
 
 class LSTM_Attention(nn.Module):

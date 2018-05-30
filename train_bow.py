@@ -129,8 +129,14 @@ best_model_wts = copy.deepcopy(model.state_dict())
 
 train_qa_data = qa_data['training']
 val_qa_data = qa_data['validation']
-num_iter_per_epoch = len(train_qa_data) // batch_size
-n_iter = 0
+
+batchs_train = len(train_qa_data) // batch_size + 1
+batchs_val = len(val_qa_data) // batch_size + 1
+
+n_iter_train = 0
+count = 0
+best_val_loss = 200.0
+best_val_acc = 0.0
 for epoch in range(num_epoch):
     pbar = pb.ProgressBar()
 
@@ -138,7 +144,7 @@ for epoch in range(num_epoch):
     model.train()
     loss_value = 0.0
     correct = 0.0
-    for j in pbar(range(1, num_iter_per_epoch+1)):
+    for j in pbar(range(batchs_train)):
         img_features, que_features, soft_answers, answers = sample_batch(j, batch_size, train_image_features, train_image_id_map, train_qa_data, 'train')
         
         img_features = img_features.to(device)
@@ -148,26 +154,24 @@ for epoch in range(num_epoch):
         
         output = model(img_features, que_features)
         loss = criterion(output, soft_answers)
-        loss_value += loss.data
+        loss_value += loss.data * answers.size(0)
 
         pred = F.softmax(output, dim=1)
         pred = pred.data.max(1)[1] # get the index of the max log-probability
         acc = pred.eq(soft_answers.data).cpu().sum()
         correct += acc
 
-        writer.add_scalar(net_name+'_hard/train_loss_per_iter', loss.data, n_iter)
-        writer.add_scalar(net_name+'_hard/train_acc_per_iter', acc, n_iter)
-        n_iter += 1
+        writer.add_scalar(net_name+'_hard/train_loss_per_iter', loss.data, n_iter_train)
+        writer.add_scalar(net_name+'_hard/train_acc_per_iter', acc, n_iter_train)
+        n_iter_train += 1
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         
-    print("\nTrain epoch {}, loss {}, acc {}".format(epoch,
-            loss_value / num_iter_per_epoch,
-            correct.double() / len(train_qa_data)))
-    train_epoch_loss = loss_value / (len(train_qa_data) // batch_size)
-    train_epoch_acc = correct.float() / (len(train_qa_data) // batch_size * batch_size)
+    train_epoch_loss = loss_value / len(train_qa_data)
+    train_epoch_acc = correct.float() / len(train_qa_data)
+    print("\nTrain epoch {}, loss {}, acc {}".format(epoch, train_epoch_loss, train_epoch_acc))
 
     if epoch > 20 and epoch % 10 == 0:
         for param_group in optimizer.param_groups:
@@ -184,10 +188,8 @@ for epoch in range(num_epoch):
     model.eval()
     loss_value = 0.0
     correct = 0.0
-    count = 0
-    prev_val_epoch_loss = 200.0
     
-    for j in pbar(range(len(val_qa_data) // batch_size)):
+    for j in pbar(range(batchs_val)):
         img_features, que_features, soft_answers, answers = sample_batch(j, batch_size, val_image_features, val_image_id_map, val_qa_data, 'val')
         
         img_features = img_features.to(device)
@@ -198,30 +200,32 @@ for epoch in range(num_epoch):
         output = model(img_features, que_features)
 
         loss = criterion(output, soft_answers)
-        loss_value += loss.data
+        loss_value += loss.data * answers.size(0)
 
         pred = F.softmax(output, dim=1)
         pred = output.data.max(1)[1] # get the index of the max log-probability
         acc = pred.eq(answers.data).cpu().sum()
         correct += acc
 
-    print("\nTest epoch {}, loss {}, acc {}".format(epoch,
-                    loss_value / (len(val_qa_data) /batch_size),
-                    correct.double() / (len(val_qa_data) // batch_size * batch_size)))
-    val_epoch_loss = loss_value / (len(train_qa_data) // batch_size)
-    val_epoch_acc = correct.float() / (len(val_qa_data) // batch_size * batch_size)
+    val_epoch_loss = loss_value / len(train_qa_data)
+    val_epoch_acc = correct.float() / len(val_qa_data)
+    print("\nValidation epoch {}, loss {}, acc {}".format(epoch, val_epoch_loss, val_epoch_acc))
     
-    if val_epoch_loss < prev_val_epoch_loss:
-        prev_val_epoch_loss = val_epoch_loss
+    writer.add_scalars(net_name+'_hard/loss', {'train_per_epoch': train_epoch_loss, 'val_per_epoch': val_epoch_loss}, epoch)
+    writer.add_scalars(net_name+'_hard/accuracy', {'train_per_epoch': train_epoch_acc, 'val_per_epoch': val_epoch_acc}, epoch)
+    
+    if val_epoch_loss < best_val_loss:
+        best_val_loss = val_epoch_loss
+        best_val_acc = val_epoch_acc
         best_model_wts = copy.deepcopy(model.state_dict())
         count = 0
     else:
         count += 1
-        if count >= 3:
+        if count >= 5:
+            print('Validation loss does not decrease in 5 epochs, training stops')
             break
-    writer.add_scalars(net_name+'_hard/loss', {'train_per_epoch': train_epoch_loss, 'val_per_epoch': val_epoch_loss}, epoch)
-    writer.add_scalars(net_name+'_hard/accuracy', {'train_per_epoch': train_epoch_acc, 'val_per_epoch': val_epoch_acc}, epoch)
+    
     
 # load best model weights
 model.load_state_dict(best_model_wts)
-torch.save(clean_state_dict(model.state_dict()), net_name+'hard.pth')
+torch.save(clean_state_dict(model.state_dict()), net_name+'_hard.pth')

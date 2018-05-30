@@ -107,3 +107,4 @@ class Nonlinear_layer(nn.Module):
         o_sig = torch.sigmoid(o_2)
         o = o_tanh * o_sig
         return o
+

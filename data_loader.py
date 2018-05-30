@@ -8,7 +8,7 @@ import pickle
 import collections
 import pdb
 
-def prepare_training_data(token_type='word', version = 2, data_dir = 'data', num_que=20000):
+def prepare_training_data(token_type='word', version = 2, data_dir = 'data', num_que=20000, image_first=False):
         """Generate training and validation data from json file, as well as the question_vocab, answer_vocab and max_question_size
         
         Keyword Arguments:
@@ -42,6 +42,10 @@ def prepare_training_data(token_type='word', version = 2, data_dir = 'data', num
                 elif token_type == 'bigram':
                         qa_data_file = join(data_dir, 'bi_qa_data_file2_'+str(num_que)+'.pkl')
                         vocab_file = join(data_dir, 'bi_vocab_file2_'+str(num_que)+'.pkl')
+
+                if image_first:
+                        qa_data_file = join(data_dir, 'qa_data_file2_'+str(num_que)+'image_first.pkl')
+                        vocab_file = join(data_dir, 'vocab_file2_'+str(num_que)+'image_first.pkl')
 
         # IF ALREADY EXTRACTED
         # qa_data_file = join(data_dir, 'qa_data_file{}.pkl'.format(version))
@@ -98,8 +102,12 @@ def prepare_training_data(token_type='word', version = 2, data_dir = 'data', num
                         if token_type == 'bigram':
                                 question_words = [question_words[i]+' '+question_words[i+1] for i,x in enumerate(question_words[:-1])]
                         base = max_question_length - len(question_words)
-                        for i in range(0, len(question_words)):
-                                training_data[-1]['question'][base + i] = question_vocab[ question_words[i] ] if question_words[i] in question_vocab else question_vocab['UNK']
+                        if not image_first:
+                                for i in range(0, len(question_words)):
+                                        training_data[-1]['question'][base + i] = question_vocab[ question_words[i] ] if question_words[i] in question_vocab else question_vocab['UNK']
+                        else:
+                                for i in range(0, len(question_words)):
+                                        training_data[-1]['question'][i] = question_vocab[ question_words[i] ] if question_words[i] in question_vocab else question_vocab['UNK']
 
         print("Training Data", len(training_data))
         val_data = []
