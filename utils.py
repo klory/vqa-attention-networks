@@ -3,6 +3,28 @@ import torch
 import pdb
 # courtesy from https://discuss.pytorch.org/t/solved-keyerror-unexpected-key-module-encoder-embedding-weight-in-state-dict/1686/3
 
+from torch.data import Dataset
+import torch
+
+# define datasets
+class VqaDataset(Dataset):
+  def __init__(self, qa_data, split):
+    self.qa = qa_data[split]
+    self.split = split
+
+  def __getitem__(self, index):
+    image_id = self.qa[index]['image_id']
+    filepath = join('data/{}_blocks_vgg19'.format(self.split), 'COCO_{}2014_{:012d}.npy'.format(self.split, image_id))
+    image_features = np.load(filepath) # 1024, 7, 7
+    image_features = np.transpose(image_features, (1,2,0)) # 7, 7, 1024
+    image_features = image_features.reshape(-1, image_features.shape[-1]) # 49, 1024
+    question = self.qa[index]['question'] # 
+    answer = self.qa[index]['answer'] # scalar
+    return torch.tensor(image_features, dtype=torch.float), torch.tensor(question, dtype=torch.long), torch.tensor(answer, dtype=torch.long)
+
+  def __len__(self):
+    return len(self.qa)
+
 def clean_state_dict(state_dict):
     # create new OrderedDict that does not contain `module.`
     from collections import OrderedDict
