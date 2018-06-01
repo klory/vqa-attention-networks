@@ -5,13 +5,13 @@ import torch.nn.functional as F
 
 import pdb
 class VisLSTM(nn.Module):
-    def __init__(self, img_dim=4096, hidden_dim=512, embed_dim=512, vocab_size=6000):
+    def __init__(self, cfg):
         super(VisLSTM, self).__init__()
         # parameters of lstm
-        self.hidden_dim = hidden_dim # H
-        self.embed_dim = embed_dim # V
-        self.vocab_size = vocab_size  # E
-        self.img_dim = img_dim # I
+        self.hidden_dim = cfg.hidden_dim # H
+        self.embed_dim = cfg.embed_dim # V
+        self.vocab_size = cfg.vocab_size  # E
+        self.img_dim = cfg.img_feature_dim # I
 
         # network graph
         self.embedding_ques = nn.Embedding(self.vocab_size, self.embed_dim)
@@ -24,12 +24,12 @@ class VisLSTM(nn.Module):
         return (torch.zeros(batch_size, self.hidden_dim).cuda(),\
                 torch.zeros(batch_size, self.hidden_dim).cuda())
 
-    def forward(self, questions, img_features, first_words=True):
+    def forward(self, img_features, questions, image_first=True):
         """
         inputs: 
             questions: N, T
             img_features: N, D
-            first_words: whether img_features fed into lstm as the first words or not
+            image_first: whether img_features fed into lstm as the first words or not
         """
         embedded_ques = self.embedding_ques(questions) # N, T, V
         embedded_img = F.dropout(F.tanh(self.embedding_img(img_features)))# N, H
@@ -40,7 +40,7 @@ class VisLSTM(nn.Module):
         assert(D == V), 'question embedding dimension and image feature dimension not match'
 
         inputs = torch.zeros((T+1, N, V )).cuda()
-        if first_words:
+        if image_first:
             inputs[0] = embedded_img
             inputs[1:, :, :] = embedded_ques
         else:

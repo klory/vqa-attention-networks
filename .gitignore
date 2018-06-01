@@ -10,4 +10,5 @@ __pycache__/
 .ipynb_checkpoints/
 runs/
 .vscode/
+models/
 train_hfd.py
