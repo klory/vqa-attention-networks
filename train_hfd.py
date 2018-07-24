@@ -1,15 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.data import DataLoader
 from data_loader import load_questions_answers
 from tensorboardX import SummaryWriter
 import progressbar as pb
 import numpy as np
-from attention_net import Attention_net, Attention_net_parallel
+from networks import iBOWIMG, HieCoAtten, Attention_net
 import copy
 import argparse
-import sys
 import pdb
 from utils import clean_state_dict, VqaDataset
 import time
@@ -21,6 +20,8 @@ parser.add_argument('--batch_size', type=int, default=64,
                     help='input batch size for training (default: 64)')
 parser.add_argument('--num_epochs', type=int, default=60,
                     help='num of training epochs (default: 60)')
+parser.add_argument('--network', type=str, default='iBOWIMG',
+                    help='network type iBOWIMG|HieCoAtten')
 parser.add_argument('--use_soft', action='store_true', default=False,
                     help='using soft cross entropy')
 args = parser.parse_args()
@@ -28,6 +29,7 @@ args = parser.parse_args()
 data_dir = args.data_dir
 batch_size = args.batch_size
 num_epochs = args.num_epochs
+network = args.network
 use_soft = args.use_soft
 
 # Load QA Data
@@ -41,44 +43,28 @@ print("max question length", qa_data['max_question_length'])
 
 # Define Data Loader
 data_splits = ('train', 'val')
+pdb.set_trace()
+if network == 'iBOWIMG':
+    feature_type='vgg19Fc'
+elif network == 'HieCoAtten':
+    feature_type='vgg19TwoBlocks'
 
-datasets = {x: VqaDataset(qa_data, x) for x in data_splits}
+datasets = {x: VqaDataset(qa_data, x, feature_type=feature_type) for x in data_splits}
 
 dataloaders = {x: DataLoader(datasets[x], batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=False) 
                     for x in data_splits}
 
 dataset_sizes = {x: len(datasets[x]) for x in data_splits}
 
-print(dataset_sizes)
-
-# [Discarded]
-def sample_batch_soft(batch_no, batch_size, features, image_id_map, qa, split):
-  si = (batch_no * batch_size)%len(qa)
-  ei = min(len(qa), si + batch_size)
-  n = ei - si
-  sentence = np.ndarray( (n, qa_data['max_question_length']), dtype=int) # [N, 22]
-  soft_answers = np.zeros((n, len(qa_data['answer_vocab'])), dtype=int) # [N, answer_vocab_size]
-  answers = np.zeros((n,), dtype=int) # [N,]
-  fc7 = torch.empty( (n,49,1024) ) # [N, 49, 1024]
-
-  count = 0
-  for i in range(si, ei):
-    sentence[count,:] = qa[i]['question'][:]
-    sparse_soft_answers = qa[i]['answers']
-    idx = list(sparse_soft_answers.keys())
-    probs = list(sparse_soft_answers.values())
-    soft_answers[count,idx] = probs
-    answers[count] = qa[i]['answer']
-    fc7_index = image_id_map[ qa[i]['image_id'] ]
-    fc7[count,:,:] = features[fc7_index, :, :]
-    count += 1
-  return fc7, torch.tensor(sentence), torch.tensor(soft_answers), torch.tensor(answers)
-
 # Define model
-model_name = 'Attention_net_parallel'
-model = Attention_net_parallel(block_num=49, word_num=qa_data['max_question_length'], 
-                    img_size=1024, vocab_size=len(qa_data['question_vocab']), 
-                    embed_size=512, att_num=6, output_size=len(qa_data['answer_vocab']))
+model_name = network
+if network == 'iBOWIMG':
+    model = iBOWIMG(img_size=4096, vocab_size=len(qa_data['question_vocab']), embed_size=512, 
+                    output_size=len(qa_data['answer_vocab']))
+elif network == 'HieCoAtten':
+    model = HieCoAtten(block_num=49, word_num=qa_data['max_question_length'], 
+                        img_size=1024, vocab_size=len(qa_data['question_vocab']), 
+                        embed_size=512, att_num=6, output_size=len(qa_data['answer_vocab']))
 
 def soft_loss(preds, labels):
     s = F.softmax(labels, dim=1)
@@ -86,7 +72,6 @@ def soft_loss(preds, labels):
     return res
 
 if use_soft:
-    sample_batch = sample_batch_soft
     criterion = soft_loss
 else:
     criterion = nn.CrossEntropyLoss()
@@ -114,7 +99,7 @@ n_iter = 0
 count = 0
 since = time.time()
 for epoch in range(num_epochs):
-    print('-' * 20)
+    print('-' * 10)
     print('Epoch {:4d}/{:4d}'.format(epoch, num_epochs - 1))
 
     # Each epoch has a train and val phase
@@ -137,7 +122,10 @@ for epoch in range(num_epochs):
             # forward
             # track history if only in train
             with torch.set_grad_enabled(phase == data_splits[0]):
-                logits, que_att, img_att = model(image_features, questions)
+                if network == 'iBOWIMG':
+                    logits = model(image_features, questions)
+                else:
+                    logits, que_att, img_att = model(image_features, questions)
                 preds = F.softmax(logits, dim=1)
                 preds = preds.data.max(1)[1] # get the index of the max log-probability
                 loss = criterion(logits, answers)

@@ -9,7 +9,7 @@ class VisLSTM(nn.Module):
         super(VisLSTM, self).__init__()
         # parameters of lstm
         self.hidden_dim = cfg.hidden_dim # H
-        self.embed_dim = cfg.embed_dim # V
+        self.embed_dim = cfg.emb_dim # V
         self.vocab_size = cfg.vocab_size  # E
         self.img_dim = cfg.img_feature_dim # I
 
@@ -31,11 +31,11 @@ class VisLSTM(nn.Module):
             img_features: N, D
             image_first: whether img_features fed into lstm as the first words or not
         """
-        embedded_ques = self.embedding_ques(questions) # N, T, V
+        embedded_ques = F.dropout(self.embedding_ques(questions)) # N, T, V
         embedded_img = F.dropout(F.tanh(self.embedding_img(img_features)))# N, H
         embedded_ques = embedded_ques.permute((1, 0, 2))
 
-        N, D = embedded_img.shape
+        N, D = embedded_img.shape[:2]
         T, N, V = embedded_ques.shape
         assert(D == V), 'question embedding dimension and image feature dimension not match'
 
@@ -57,7 +57,7 @@ class VisLSTM(nn.Module):
 
         output = self.output_layer(hidden_states[-1])
         hidden_states = torch.stack(hidden_states, 1)
-        return output, hidden_states
+        return output
 
 class LSTM_Attention(nn.Module):
     def __init__(self, hidden_dim=512, embed_dim=512, vocab_size=6000, batch_size=16, dropout_rate=0.5):
