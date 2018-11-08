@@ -6,6 +6,8 @@ import collections
 import torch
 import os
 from os.path import join
+import pdb
+
 
 def clean_state_dict(state_dict):
     # create new OrderedDict that does not contain `module.`
@@ -91,15 +93,25 @@ manualMap    = {'none': '0',
                 'ten': '10'
               }
 
-def contract_word(word):
-    word = word.lower()
-    if word in contractions:
-        return contractions[word]
-    if word in manualMap:
-        return manualMap[word]
-    return word
+def contract_word(sent):
+    """
+    input: sentence, word list
+    output: sentence of lower case of words with the same length as input after contraction and number replacement.
+    """
+    sent_processed = list()
+    for w in sent:
+        w = w.lower()
+        if w in contractions:
+            w = contractions[w]
+        if w in manualMap:
+            w = manualMap[w]
+        sent_processed.append(w)
+    return sent_processed
 
-def prepare_training_data(data_dir = 'data', image_first=False, version=2, num_ans=1000):
+def prepare_training_data(data_dir = 'data', version=2, num_ans=1000, answer_type='all'):
+
+    assert answer_type in ('all', 'other', 'yes/no', 'number'), 'answer_type is not satisfied'
+
     if version == 1:
         t_q_json_file = join(data_dir, 'vqa/MultipleChoice_mscoco_train2014_questions.json')
         t_a_json_file = join(data_dir, 'vqa/mscoco_train2014_annotations.json')
@@ -113,13 +125,6 @@ def prepare_training_data(data_dir = 'data', image_first=False, version=2, num_a
         v_q_json_file = join(data_dir, 'vqa/v2_OpenEnded_mscoco_val2014_questions.json')
         v_a_json_file = join(data_dir, 'vqa/v2_mscoco_val2014_annotations.json')
     
-
-    qa_data_file = join(data_dir, 'qa_v{}_{:4d}answers.pkl'.format(version, num_ans))
-    vocab_file = join(data_dir, 'vocab_v{}_{:4d}answers.pkl'.format(version, num_ans))
-
-    if image_first:
-        qa_data_file += '_imageFirst'
-        vocab_file += '_imageFirst'
 
     print("Loading Training questions")
     with open(t_q_json_file) as f:
@@ -143,77 +148,61 @@ def prepare_training_data(data_dir = 'data', image_first=False, version=2, num_a
     answers = t_answers['annotations'] + v_answers['annotations']
     questions = t_questions['questions'] + v_questions['questions']
 
+    answer_type_for_file = answer_type
+    if answer_type == 'yes/no':
+        answer_type_for_file = 'yesno'
+    qa_data_file = join(data_dir, 'qa_v{}_{:4d}answers_{}.pkl'.format(version, num_ans, answer_type_for_file))
+    vocab_file = join(data_dir, 'vocab_v{}_{:4d}answers_{}.pkl'.format(version, num_ans, answer_type_for_file))
+
+    if answer_type in ('other', 'yes/no', 'number'):
+        answers = [x for x in answers if x['answer_type']==answer_type]
+        question_id_set = set([x['question_id'] for x in answers])
+        questions = [q for q in questions if q['question_id'] in question_id_set]
+ 
     # find the top num_ans answers and their frequencies
     answer_vocab = make_answer_vocab(answers, num_ans)
+
+    print(list(answer_vocab.keys())[:min(10, len(answer_vocab))])
 
     # find soft version of answers
     soft_answers = make_soft_answers(answer_vocab, answers)
 
     # find the most frequent words in questions and their frequencies, as well as the max_question_length
     question_vocab, max_question_length = make_questions_vocab(questions, answers, answer_vocab) 
-    print("Question Vocabulary Size", len(question_vocab))
-    print("Max Question Length", max_question_length)
 
     # only need words
     word_regex = re.compile(r'\w+')
 
-    # training data
-    training_data = []
-    for i,question in enumerate( t_questions['questions']):
-        ans = t_answers['annotations'][i]['multiple_choice_answer']
-        ans = contract_word(ans)
+    # qa data
+    data = []
+    for i,question in enumerate(questions):
+        ans = answers[i]['multiple_choice_answer']
+        ans = contract_word([ans])[0]
         # only need questions that has the top num_ans answers
         if ans in answer_vocab:
-            training_data.append({
-                'image_id' : t_answers['annotations'][i]['image_id'],
+            data.append({
+                'image_id' : answers[i]['image_id'],
                 'question' : np.zeros(max_question_length),
                 'answer' : answer_vocab[ans],
-                'answers': soft_answers[t_answers['annotations'][i]['question_id']]
+                'answers': soft_answers[answers[i]['question_id']]
                 })
-            question_words = re.findall(word_regex, question['question'])
-            base = max_question_length - len(question_words)
-            if not image_first:
-                for i in range(0, len(question_words)):
-                    q_w = contract_word(question_words[i])
-                    training_data[-1]['question'][base + i] = question_vocab[ q_w ] \
-                    if q_w in question_vocab else question_vocab['UNK']
-            else:
-                for i in range(0, len(question_words)):
-                    q_w = contract_word(question_words[i])
-                    training_data[-1]['question'][i] = question_vocab[ q_w ] \
-                    if q_w in question_vocab else question_vocab['UNK']
-    
-    # val data
-    val_data = []
-    for i,question in enumerate( v_questions['questions']):
-        ans = v_answers['annotations'][i]['multiple_choice_answer']
-        ans = contract_word(ans)
-        if ans in answer_vocab:
-            val_data.append({
-                'image_id' : v_answers['annotations'][i]['image_id'],
-                'question' : np.zeros(max_question_length),
-                'answer' : answer_vocab[ans],
-                'answers': soft_answers[v_answers['annotations'][i]['question_id']]
-                })
-            question_words = re.findall(word_regex, question['question'])
-            base = max_question_length - len(question_words)
-            if not image_first:
-                for i in range(0, len(question_words)):
-                    q_w = contract_word(question_words[i])
-                    val_data[-1]['question'][base + i] = question_vocab[ q_w ] \
-                    if q_w in question_vocab else question_vocab['UNK']
-            else:
-                for i in range(0, len(question_words)):
-                    q_w = contract_word(question_words[i])
-                    val_data[-1]['question'][i] = question_vocab[ q_w ] \
-                    if q_w in question_vocab else question_vocab['UNK']
+            question_sent = re.findall(word_regex, question['question'])
+            question_sent = contract_word(question_sent)
+            q_len = len(question_sent)
+            data[-1]['ques_length'] = q_len
+            for i in range(0, len(question_sent)):
+                q_w = question_sent[i]
+                data[-1]['question'][i] = question_vocab[ q_w ] \
+                if q_w in question_vocab else question_vocab['UNK']
 
-    print("train|val (after filtering)", len(training_data), len(val_data))
+    print("nubmer of questions after filtering", len(data))
+    print('answer_vocab', len(answer_vocab))
+    print('question_vocab', len(question_vocab))
+    print('max_question_length', max_question_length)
 
     # save all data in the `qa_data.pkl` file
-    data = {
-        'train' : training_data,
-        'val' : val_data,
+    all_data = {
+        'data' : data,
         'answer_vocab' : answer_vocab,
         'question_vocab' : question_vocab,
         'max_question_length' : max_question_length
@@ -221,25 +210,25 @@ def prepare_training_data(data_dir = 'data', image_first=False, version=2, num_a
 
     print("Saving qa_data...")
     with open(qa_data_file, 'wb') as f:
-        pickle.dump(data, f)
+        pickle.dump(all_data, f)
 
     # save vocabulary data in the `vocab_file2.pkl` file
     with open(vocab_file, 'wb') as f:
         vocab_data = {
-        'answer_vocab' : data['answer_vocab'],
-        'question_vocab' : data['question_vocab'],
-        'max_question_length' : data['max_question_length']
+        'answer_vocab' : all_data['answer_vocab'],
+        'question_vocab' : all_data['question_vocab'],
+        'max_question_length' : all_data['max_question_length']
         }
         pickle.dump(vocab_data, f)
 
     return data
 
 def make_answer_vocab(answers, num_ans):
-    top_n = num_ans
+    
     answer_frequency = {} 
     for annotation in answers:
         answer = annotation['multiple_choice_answer']
-        answer = contract_word(answer)
+        answer = contract_word([answer])[0]
         if answer in answer_frequency:
             answer_frequency[answer] += 1
         else:
@@ -247,6 +236,7 @@ def make_answer_vocab(answers, num_ans):
 
     answer_frequency_tuples = [ (-frequency, answer) for answer, frequency in answer_frequency.items()]
     answer_frequency_tuples.sort()
+    top_n = min(num_ans, len(answer_frequency_tuples))
     answer_frequency_tuples = answer_frequency_tuples[0:top_n-1]
 
     answer_vocab = {}
@@ -264,15 +254,14 @@ def make_soft_answers(answer_vocab, answers):
         q_id = a['question_id']
         ans_dict[q_id] = dict()
         a_list = list()
-    for an in ans:
-      this_ans = contract_word(an['answer'])
-      if this_ans in answer_vocab:
-        a_list.append(this_ans)
+        for an in ans:
+            this_ans = contract_word([an['answer']])[0]
+            if this_ans in answer_vocab:
+                a_list.append(this_ans)
 
-    count = collections.Counter(a_list)
-    for w, v in count.items():
-      ans_dict[q_id][answer_vocab[w]] = v / float(len(a_list))
-
+        count = collections.Counter(a_list)
+        for w, v in count.items():
+            ans_dict[q_id][answer_vocab[w]] = v / float(len(a_list))
     return ans_dict
 
 def make_questions_vocab(questions, answers, answer_vocab):
@@ -282,7 +271,7 @@ def make_questions_vocab(questions, answers, answer_vocab):
     for i,question in enumerate(questions):
         # answer for the question
         ans = answers[i]['multiple_choice_answer']
-        ans = contract_word(ans)
+        ans = contract_word([ans])[0]
         count = 0
 
         # answer is among top num_ans
@@ -292,7 +281,7 @@ def make_questions_vocab(questions, answers, answer_vocab):
 
         # update frequency for each token
         for qw in question_words:
-            qw = contract_word(qw)
+            qw = contract_word([qw])[0]
             if qw in question_frequency:
                 question_frequency[qw] += 1
             else:
@@ -324,6 +313,7 @@ def load_questions_answers(data_dir='data', image_first=False, version=2, num_an
     qa_data_file = join(data_dir, 'qa_v{}_{:4d}answers.pkl'.format(version, num_ans))
     if image_first:
         qa_data_file += '_imageFirst'
+
     data = pickle.load(open(qa_data_file, 'rb'))
     return data
 
@@ -331,6 +321,7 @@ def load_question_answer_vocab(data_dir='data', image_first=False, version=2, nu
     vocab_file = join(data_dir, 'vocab_v{}_{:4d}answers.pkl'.format(version, num_ans))
     if image_first:
         vocab_file += '_imageFirst'
+
     vocab_data = pickle.load(open(vocab_file, 'rb'))
     return vocab_data
 
@@ -383,6 +374,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='save qa data')
     parser.add_argument('--num_answer', type=int, default=1000, help='number of answers (default=1000)')
     parser.add_argument('--version', type=int, default=2, help='vqa dataset version (1|2, default=2)')
-    parser.add_argument('--image_first', type=bool, default=0, help='whether to save image (default=0)')
+    parser.add_argument('--answer_type', type=str, default='all', help='all|other|yesno|number (default=all)')
     args = parser.parse_args()
-    prepare_training_data(image_first=args.image_first, version=args.version, num_ans=args.num_answer)
+
+    prepare_training_data(version=args.version, num_ans=args.num_answer, answer_type=args.answer_type)
